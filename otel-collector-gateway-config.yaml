@@ -1,0 +1,53 @@
+# EDOT Collector Gateway Mode Configuration for Elastic 8.19
+# Minimal configuration for aggregating telemetry from multiple APM services
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 60s
+    send_batch_size: 1000
+    send_batch_max_size: 1500
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+
+exporters:
+  # Note: {ELASTIC_ENDPOINT} and {ELASTIC_API_KEY} will be replaced during installation
+  otlp/elastic:
+    endpoint: {ELASTIC_ENDPOINT}
+    headers:
+      Authorization: "Bearer {ELASTIC_API_KEY}"
+    tls:
+      insecure: false
+    compression: gzip
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/elastic]
+    
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/elastic]
+    
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/elastic]
