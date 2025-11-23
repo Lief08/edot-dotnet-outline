@@ -1,5 +1,5 @@
 # EDOT Collector Gateway Mode Configuration for Elastic 8.19
-# Minimal configuration for aggregating telemetry from multiple APM services
+# Routing configuration based on deployment.environment attribute
 
 receivers:
   otlp:
@@ -19,12 +19,31 @@ processors:
     check_interval: 1s
     limit_mib: 512
 
+  # Routing processor to separate production and non-production environments
+  routing:
+    from_attribute: deployment.environment
+    default_exporters: [otlp/elastic-nonprod]
+    table:
+      - statement: route() where IsMatch(attributes["deployment.environment"], "(?i).*(PROD|DR).*")
+        exporters: [otlp/elastic-prod]
+
 exporters:
-  # Note: {ELASTIC_ENDPOINT} and {ELASTIC_API_KEY} will be replaced during installation
-  otlp/elastic:
-    endpoint: {ELASTIC_ENDPOINT}
+  # Production Elastic endpoint (for PROD/DR environments)
+  # Note: {ELASTIC_PROD_ENDPOINT} and {ELASTIC_PROD_API_KEY} will be replaced during installation
+  otlp/elastic-prod:
+    endpoint: {ELASTIC_PROD_ENDPOINT}
     headers:
-      Authorization: "Bearer {ELASTIC_API_KEY}"
+      Authorization: "Bearer {ELASTIC_PROD_API_KEY}"
+    tls:
+      insecure: false
+    compression: gzip
+
+  # Non-Production Elastic endpoint (for all other environments)
+  # Note: {ELASTIC_NONPROD_ENDPOINT} and {ELASTIC_NONPROD_API_KEY} will be replaced during installation
+  otlp/elastic-nonprod:
+    endpoint: {ELASTIC_NONPROD_ENDPOINT}
+    headers:
+      Authorization: "Bearer {ELASTIC_NONPROD_API_KEY}"
     tls:
       insecure: false
     compression: gzip
@@ -39,15 +58,15 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [otlp/elastic]
+      processors: [memory_limiter, routing, batch]
+      exporters: [otlp/elastic-prod, otlp/elastic-nonprod]
     
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [otlp/elastic]
+      processors: [memory_limiter, routing, batch]
+      exporters: [otlp/elastic-prod, otlp/elastic-nonprod]
     
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [otlp/elastic]
+      processors: [memory_limiter, routing, batch]
+      exporters: [otlp/elastic-prod, otlp/elastic-nonprod]
