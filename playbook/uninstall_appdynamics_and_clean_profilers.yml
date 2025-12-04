@@ -1,0 +1,67 @@
+---
+# Ansible playbook to uninstall AppDynamics .NET agent artifacts
+# and clean profiler-related configuration on Windows Server 2012 R2+.
+#
+# This playbook is a conceptual breakdown of the logic implemented
+# in ref/scripts/Uninstall-AppDynamicsAndCleanProfilers.ps1.
+# It assumes:
+#   - You are targeting Windows hosts via winrm.
+#   - You have appropriate Administrator privileges.
+#   - You are comfortable running PowerShell on the target host.
+
+- name: Uninstall AppDynamics .NET agent and clean profilers
+  hosts: windows
+  gather_facts: no
+  vars:
+    backup_dir: C:\\EDOT-Migration\\Backups
+    skip_uninstall: false
+    whatif: false
+
+  tasks:
+    - name: Ensure backup directory exists
+      ansible.windows.win_file:
+        path: "{{ backup_dir }}"
+        state: directory
+
+    - name: Copy Uninstall-AppDynamicsAndCleanProfilers.ps1 to remote
+      ansible.windows.win_copy:
+        src: "{{ playbook_dir }}\\..\\ref\\scripts\\Uninstall-AppDynamicsAndCleanProfilers.ps1"
+        dest: "{{ backup_dir }}\\Uninstall-AppDynamicsAndCleanProfilers.ps1"
+
+    - name: Run Uninstall-AppDynamicsAndCleanProfilers.ps1
+      ansible.windows.win_powershell:
+        script: |
+          param(
+              [string]$BackupDir,
+              [bool]$SkipUninstall,
+              [bool]$WhatIf
+          )
+
+          $scriptPath = Join-Path $BackupDir 'Uninstall-AppDynamicsAndCleanProfilers.ps1'
+
+          if (-not (Test-Path $scriptPath)) {
+              Write-Error "Script not found at $scriptPath"
+              exit 1
+          }
+
+          $params = @('-BackupDir', $BackupDir)
+
+          if ($SkipUninstall) {
+              $params += '-SkipUninstall'
+          }
+
+          if ($WhatIf) {
+              $params += '-WhatIf'
+          }
+
+          & $scriptPath @params
+        arguments:
+          BackupDir: "{{ backup_dir }}"
+          SkipUninstall: "{{ skip_uninstall | bool }}"
+          WhatIf: "{{ whatif | bool }}"
+
+      register: cleanup_result
+
+    - name: Show cleanup script output
+      ansible.builtin.debug:
+        var: cleanup_result.stdout_lines
